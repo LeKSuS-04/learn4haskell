@@ -114,23 +114,23 @@ As always, try to guess the output first! And don't forget to insert
 the output in here:
 
 >>> :k Char
-
+Char :: *
 >>> :k Bool
-
+Bool :: *
 >>> :k [Int]
-
+[Int] :: *
 >>> :k []
-
+[] :: * -> *
 >>> :k (->)
-
+(->) :: * -> * -> *
 >>> :k Either
-
+Either :: * -> * -> *
 >>> data Trinity a b c = MkTrinity a b c
 >>> :k Trinity
-
+Trinity :: * -> * -> * -> *
 >>> data IntBox f = MkIntBox (f Int)
 >>> :k IntBox
-
+IntBox :: (* -> *) -> *
 -}
 
 {- |
@@ -264,7 +264,8 @@ name.
 instance Functor Maybe where
     fmap :: (a -> b) -> Maybe a -> Maybe b
     fmap f (Just a) = Just (f a)
-    fmap _ x = x
+    fmap _ x = x      -- Error must occure here, we can't return value 
+                      -- of the same type.
 @
 -}
 
@@ -283,6 +284,11 @@ data Secret e a
     deriving (Show, Eq)
 
 
+instance Functor (Secret e) where
+    fmap :: (a -> b) -> Secret e a -> Secret e b
+    fmap _ (Trap x) = Trap x 
+    fmap f (Reward x) = Reward (f x)
+
 {- |
 Functor works with types that have kind `* -> *` but our 'Secret' has
 kind `* -> * -> *`. What should we do? Don't worry. We can partially
@@ -291,9 +297,10 @@ method. Yes, similar to how we can partially apply functions. See, how
 we can reuse already known concepts (e.g. partial application) from
 values and apply them to the type level?
 -}
-instance Functor (Secret e) where
-    fmap :: (a -> b) -> Secret e a -> Secret e b
-    fmap = error "fmap for Box: not implemented!"
+-- Comment this to prevent name duplication
+-- instance Functor (Secret e) where
+--     fmap :: (a -> b) -> Secret e a -> Secret e b
+--     fmap = error "fmap for Box: not implemented!"
 
 {- |
 =⚔️= Task 3
@@ -306,6 +313,13 @@ typeclasses for standard data types.
 data List a
     = Empty
     | Cons a (List a)
+    deriving Show
+
+
+instance Functor List where
+    fmap :: (a -> b) -> List a -> List b
+    fmap _ Empty = Empty
+    fmap f (Cons x y) = Cons (f x) (fmap f y)
 
 {- |
 =🛡= Applicative
@@ -472,10 +486,11 @@ Implement the Applicative instance for our 'Secret' data type from before.
 -}
 instance Applicative (Secret e) where
     pure :: a -> Secret e a
-    pure = error "pure Secret: Not implemented!"
+    pure = Reward
 
     (<*>) :: Secret e (a -> b) -> Secret e a -> Secret e b
-    (<*>) = error "(<*>) Secret: Not implemented!"
+    Trap a <*> _ = Trap a
+    Reward f <*> a = fmap f a
 
 {- |
 =⚔️= Task 5
@@ -489,6 +504,29 @@ Implement the 'Applicative' instance for our 'List' type.
   type.
 -}
 
+getHead :: List a -> a
+getHead Empty = error "Empty list"
+getHead (Cons h _) = h
+
+getTail :: List a -> List a
+getTail Empty = error "Empty list"
+getTail (Cons _ t) = t
+
+concatLists :: List a -> List a -> List a
+concatLists a Empty = a
+concatLists Empty a = a
+concatLists a b = Cons (getHead a) (concatLists (getTail a) b)
+
+instance Applicative List where
+    pure :: a -> List a
+    pure a = Cons a Empty
+
+    (<*>) :: List (a -> b) -> List a -> List b
+    Empty <*> _ = Empty
+    Cons f fs <*> a = Cons (getHead first) (concatLists (getTail first) other)
+        where
+            first = fmap f a
+            other = fs <*> a
 
 {- |
 =🛡= Monad
@@ -600,7 +638,8 @@ Implement the 'Monad' instance for our 'Secret' type.
 -}
 instance Monad (Secret e) where
     (>>=) :: Secret e a -> (a -> Secret e b) -> Secret e b
-    (>>=) = error "bind Secret: Not implemented!"
+    (>>=) (Trap a) _ = Trap a
+    (>>=) (Reward a) f = f a
 
 {- |
 =⚔️= Task 7
@@ -610,6 +649,16 @@ Implement the 'Monad' instance for our lists.
 🕯 HINT: You probably will need to implement a helper function (or
   maybe a few) to flatten lists of lists to a single list.
 -}
+
+halfList :: Integral a => a -> List a
+halfList x = pure $ x `div` 2
+
+instance Monad List where
+    (>>=) :: List a -> (a -> List b) -> List b
+    (>>=) Empty _ = Empty
+    (>>=) (Cons a as) f = Cons (getHead l) (getTail l)
+      where
+        l = concatLists (f a) (as >>= f)
 
 
 {- |
@@ -629,7 +678,10 @@ Can you implement a monad version of AND, polymorphic over any monad?
 🕯 HINT: Use "(>>=)", "pure" and anonymous function
 -}
 andM :: (Monad m) => m Bool -> m Bool -> m Bool
-andM = error "andM: Not implemented!"
+andM a b = a >>= \x ->
+    if x 
+        then b >>= \y -> pure (x && y) 
+    else pure False
 
 {- |
 =🐉= Task 9*: Final Dungeon Boss
@@ -672,6 +724,32 @@ Specifically,
    subtree of a tree
  ❃ Implement the function to convert Tree to list
 -}
+
+data Tree a
+    = Node a (Tree a) (Tree a)
+    | EmptyNode 
+    deriving Show
+
+instance Functor Tree where
+    fmap :: (a -> b) -> Tree a -> Tree b
+    fmap _ EmptyNode = EmptyNode
+    fmap f (Node v l r) = Node (f v) (fmap f l) (fmap f r)
+
+reverseTree :: Tree a -> Tree a
+reverseTree EmptyNode = EmptyNode
+reverseTree (Node v l r) = Node v (reverseTree r) (reverseTree l)
+
+treeToList :: Tree a -> [a]
+treeToList EmptyNode = []
+treeToList node = go EmptyNode node []
+    where
+        go :: Tree a -> Tree a -> [a] -> [a]
+        go EmptyNode EmptyNode vs = vs
+        go EmptyNode (Node v l r) vs = v : go l r vs
+        go l r vs = 
+            let 
+                rightList = go EmptyNode r vs
+            in go EmptyNode l rightList
 
 
 {-
