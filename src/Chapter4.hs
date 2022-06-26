@@ -741,15 +741,15 @@ reverseTree (Node v l r) = Node v (reverseTree r) (reverseTree l)
 
 treeToList :: Tree a -> [a]
 treeToList EmptyNode = []
-treeToList (Node val left right) = val : go left right []
+treeToList node = go EmptyNode node []
     where
         go :: Tree a -> Tree a -> [a] -> [a]
         go EmptyNode EmptyNode vs = vs
         go EmptyNode (Node v l r) vs = v : go l r vs
-        go v1 v2 vs = 
+        go l r vs = 
             let 
-                rightList = go EmptyNode v2 vs
-            in go EmptyNode v1 rightList
+                rightList = go EmptyNode r vs
+            in go EmptyNode l rightList
 
 
 {-
