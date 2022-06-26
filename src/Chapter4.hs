@@ -638,7 +638,8 @@ Implement the 'Monad' instance for our 'Secret' type.
 -}
 instance Monad (Secret e) where
     (>>=) :: Secret e a -> (a -> Secret e b) -> Secret e b
-    (>>=) = error "bind Secret: Not implemented!"
+    (>>=) (Trap a) _ = Trap a
+    (>>=) (Reward a) f = f a
 
 {- |
 =⚔️= Task 7
@@ -648,6 +649,16 @@ Implement the 'Monad' instance for our lists.
 🕯 HINT: You probably will need to implement a helper function (or
   maybe a few) to flatten lists of lists to a single list.
 -}
+
+halfList :: Integral a => a -> List a
+halfList x = pure $ x `div` 2
+
+instance Monad List where
+    (>>=) :: List a -> (a -> List b) -> List b
+    (>>=) Empty _ = Empty
+    (>>=) (Cons a as) f = Cons (getHead l) (getTail l)
+      where
+        l = concatLists (f a) (as >>= f)
 
 
 {- |
@@ -666,8 +677,12 @@ Can you implement a monad version of AND, polymorphic over any monad?
 
 🕯 HINT: Use "(>>=)", "pure" and anonymous function
 -}
+-- andM :: (Monad m) => m Bool -> m Bool -> m Bool
 andM :: (Monad m) => m Bool -> m Bool -> m Bool
-andM = error "andM: Not implemented!"
+andM a b = a >>= \x ->
+    if x 
+        then b >>= \y -> pure (x && y) 
+    else pure False
 
 {- |
 =🐉= Task 9*: Final Dungeon Boss
@@ -710,6 +725,32 @@ Specifically,
    subtree of a tree
  ❃ Implement the function to convert Tree to list
 -}
+
+data Tree a
+    = Node a (Tree a) (Tree a)
+    | EmptyNode 
+    deriving Show
+
+instance Functor Tree where
+    fmap :: (a -> b) -> Tree a -> Tree b
+    fmap _ EmptyNode = EmptyNode
+    fmap f (Node v l r) = Node (f v) (fmap f l) (fmap f r)
+
+reverseTree :: Tree a -> Tree a
+reverseTree EmptyNode = EmptyNode
+reverseTree (Node v l r) = Node v (reverseTree r) (reverseTree l)
+
+treeToList :: Tree a -> [a]
+treeToList EmptyNode = []
+treeToList (Node val left right) = val : go left right []
+    where
+        go :: Tree a -> Tree a -> [a] -> [a]
+        go EmptyNode EmptyNode vs = vs
+        go EmptyNode (Node v l r) vs = v : go l r vs
+        go v1 v2 vs = 
+            let 
+                rightList = go EmptyNode v2 vs
+            in go EmptyNode v1 rightList
 
 
 {-
